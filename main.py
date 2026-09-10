@@ -1,7 +1,9 @@
 import asyncio
-import os  # Render के Environment Variables को रीड करने के लिए
+import os
 import re
+from threading import Thread
 import requests
+from flask import Flask
 
 from telegram import (
     Update,
@@ -19,12 +21,32 @@ from telegram.ext import (
 )
 
 # ==========================================
+# KEEP ALIVE WEB SERVER (For Render 24/7)
+# ==========================================
+
+flask_app = Flask('')
+
+@flask_app.route('/')
+def home():
+    return "Bot is active and running 24/7!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_flask)
+    t.start()
+
+
+# ==========================================
 # CONFIG
 # ==========================================
 
-# यह लाइन Render पर सेट किए गए 'BOT_TOKEN' को अपने आप फेच कर लेगी
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_URL = "https://vercel.app"
+
+# API Base URL (Agar endpoint me query format alag hai toh yahan replace kar lena)
+API_URL = os.getenv("API_URL", "https://vercel.app/")
 
 
 # ==========================================
@@ -35,9 +57,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     welcome_text = (
-        f"👋 Welcome, {user.first_name}!\n\n"
-        "🔎 Please send a number to look up information.\n\n"
-        "⚡ Please wait while I process your request."
+        "👋 Welcome to the Lookup\n\n"
+        "1️⃣ ⚠️ DISCLAIMER:\n"
+        "This tool is strictly for Educational & Security Awareness purposes.\n"
+        "All data is indexed from publicly available data leaks.\n"
+        "We do not promote misuse, tracking, or illegal activities. Protect your privacy! 🔒\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "2️⃣ 🚀 AB HAR MATCH MEIN HOGA BADA DHAMAKA! 🤑😎🤘💥\n"
+        "⚡ Best Betting Line (No Lag)\n"
+        "🆔 Instant ID Generation\n"
+        "💸 24/7 Deposit & Withdrawal\n"
+        "🏏 Cricket, Football & More\n"
+        "📌 Rules simple hain: Limit mein khelo, jeet ke niklo! 🤑💰\n"
+        "📲 ID ke liye Contact: @hanbot30\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "👉 Send a 10-digit number"
     )
 
     try:
@@ -82,8 +116,11 @@ async def lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
+        # API Request construct
+        target_url = f"{API_URL}{clean_number}" if API_URL.endswith("/") else f"{API_URL}/{clean_number}"
+        
         response = requests.get(
-            API_URL + clean_number,
+            target_url,
             timeout=30
         )
 
@@ -203,6 +240,9 @@ async def delete_result(
 # ==========================================
 
 def main():
+    # Starts the background Flask server
+    keep_alive()
+
     telegram_request = HTTPXRequest(
         connect_timeout=30,
         read_timeout=60,
