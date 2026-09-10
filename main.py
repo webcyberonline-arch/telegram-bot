@@ -1,86 +1,82 @@
 import os
 import logging
-from flask import Flask, request
+from flask import Flask, request, render_template_string
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from google import genai
-
-# Logging setup
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# ----------------- FLASK APP -----------------
-app = Flask(__name__)
-
-# ----------------- GEMINI CLIENT -----------------
-gemini_client = None
-if os.getenv("GEMINI_API_KEY"):
-    gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-
-WELCOME_TEXT = """
-✨ **Welcome to the Lookup & AI Bot!** ✨
-
-⚠️ **DISCLAIMER:**
-This tool is strictly for Educational & Security Awareness purposes.
-All data is indexed from publicly available data leaks.
-We do not promote misuse, tracking, or illegal activities. Protect your privacy! 🛡️
-"""
-
-# ----------------- BOT HANDLERS -----------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(WELCOME_TEXT, parse_mode="Markdown")
-
-# ----------------- TELEGRAM APPLICATION -----------------
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("❌ TELEGRAM_BOT_TOKEN environment variable is missing!")
-
-application = Application.builder().token(BOT_TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-
-# ----------------- FLASK ROUTES -----------------
-@app.route('/')
-def home():
-    return "Telegram Bot is Live! ✅", 200
-
-@app.route('/health')
-def health():
-    return "OK", 200
-
-@app.route('/webhook', methods=['POST'])
-async def webhook():
-    """Telegram will send updates here"""
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    await application.process_update(update)
-    return "OK", 200
-
-# ----------------- STARTUP -----------------
-async def setup_webhook():
-    """Set webhook when the app starts"""
-    webhook_url = os.getenv("WEBHOOK_URL")  # e.g. https://telegram-bot-hn0b.onrender.com/webhook
-    
-    if webhook_url:
-        await application.bot.set_webhook(url=webhook_url)
-        logger.info(f"✅ Webhook set to: {webhook_url}")
-    else:
-        logger.warning("⚠️ WEBHOOK_URL not set. Webhook not configured.")
-
-# Initialize application
 import asyncio
 
-async def main():
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+
+# --- BOT TOKEN ---
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL") # https://tera-app.onrender.com/webhook
+
+if not BOT_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN missing hai!")
+
+# --- VOTE BOARD (Memory me) ---
+votes = {"Option A": 0, "Option B": 0}
+
+# --- TELEGRAM APP ---
+application = Application.builder().token(BOT_TOKEN).build()
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Bot Live hai! Vote ke liye /vote likho")
+
+async def vote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        choice = " ".join(context.args)
+        if choice in votes:
+            votes[choice] += 1
+            await update.message.reply_text(f"✅ {choice} ko vote mil gaya!")
+        else:
+            await update.message.reply_text(f"Options: {', '.join(votes.keys())}")
+    else:
+        await update.message.reply_text("Use: /vote Option A")
+
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("vote", vote))
+
+# --- FLASK ROUTES ---
+@app.route('/')
+def home():
+    return "Bot Live 24/7 ✅", 200
+
+@app.route('/board')
+def board():
+    html = f"""
+    <html><head><title>Live Vote</title></head>
+    <body style="font-family:sans-serif; text-align:center; margin-top:50px;">
+    <h1>📊 Live Voting Board</h1>
+    <h2>Option A: {votes['Option A']} votes</h2>
+    <h2>Option B: {votes['Option B']} votes</h2>
+    <p>Auto refresh in 3 sec</p>
+    <script>setTimeout(()=>location.reload(),3000)</script>
+    </body></html>
+    """
+    return render_template_string(html)
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    try:
+        data = request.get_json(force=True)
+        update = Update.de_json(data, application.bot)
+        # Render safe async handle
+        asyncio.run(application.process_update(update))
+        return "OK", 200
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        return "Error", 500
+
+# --- WEBHOOK SETUP ---
+async def setup():
     await application.initialize()
-    await setup_webhook()
-    await application.start()
+    if WEBHOOK_URL:
+        await application.bot.set_webhook(url=WEBHOOK_URL)
+        logger.info(f"Webhook set to {WEBHOOK_URL}")
 
-# Run the async setup
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-loop.run_until_complete(main())
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+asyncio.run(setup())
