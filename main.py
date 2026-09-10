@@ -1,26 +1,30 @@
 import os
-import sys
-import datetime
-from datetime import datetime, timedelta
+import time
 from threading import Thread
 from flask import Flask
 from google import genai
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes
 
-# ----------------- FLASK SERVER FOR RENDER PORT -----------------
+# ----------------- FLASK SERVER (Keeps Render port open) -----------------
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Telegram Bot is Live!"
+    return "Telegram Bot is Live! ✅"
+
+@app.route('/health')
+def health():
+    return "OK", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host="0.0.0.0", port=port, threaded=True)
 
-# ----------------- GEMINI CLIENT SETUP -----------------
-gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# ----------------- GEMINI CLIENT -----------------
+gemini_client = None
+if os.getenv("GEMINI_API_KEY"):
+    gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 WELCOME_TEXT = """
 ✨ **Welcome to the Lookup & AI Bot!** ✨
@@ -33,23 +37,25 @@ We do not promote misuse, tracking, or illegal activities. Protect your privacy!
 
 # ----------------- BOT HANDLERS -----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(WELCOME_TEXT)
+    await update.message.reply_text(WELCOME_TEXT, parse_mode="Markdown")
 
-# (Aap apne baki sare custom handlers yahan add kar sakte hain)
+# ----------------- MAIN -----------------
+if __name__ == "__main__":
+    # 1. Start Flask in a background thread first
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
 
-# ----------------- MAIN EXECUTION -----------------
-if __name__ == '__main__':
-    # 1. Start Flask in a background thread to keep Render port open
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-    
+    # Small delay so the port binds properly
+    time.sleep(2)
+
     # 2. Start Telegram Bot
     BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not BOT_TOKEN:
+        print("❌ ERROR: TELEGRAM_BOT_TOKEN environment variable is missing!")
+        exit(1)
+
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Add command handlers
     application.add_handler(CommandHandler("start", start))
-    
-    # Run bot polling
-    application.run_polling()
+
+    print("✅ Bot is starting...")
+    application.run_polling(drop_pending_updates=True)
