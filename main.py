@@ -30,22 +30,12 @@ flask_app = Flask('')
 def home():
     return "Bot is active and running 24/7!"
 
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    flask_app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run_flask)
-    t.start()
-
 
 # ==========================================
 # CONFIG
 # ==========================================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# API Base URL (Agar endpoint me query format alag hai toh yahan replace kar lena)
 API_URL = os.getenv("API_URL", "https://vercel.app/")
 
 
@@ -82,7 +72,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if photos.total_count > 0:
             photo_id = photos.photos[0][-1].file_id
-
             await update.message.reply_photo(
                 photo=photo_id,
                 caption=welcome_text
@@ -100,38 +89,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     number = update.message.text.strip()
-
-    # Keep only digits and '+' character
     clean_number = re.sub(r"[^\d+]", "", number)
 
     if not clean_number:
-        await update.message.reply_text(
-            "❌ Please send a valid number."
-        )
+        await update.message.reply_text("❌ Please send a valid number.")
         return
 
     searching_message = await update.message.reply_text(
-        "🔎 Searching...\n\n"
-        "⏳ Please wait..."
+        "🔎 Searching...\n\n⏳ Please wait..."
     )
 
     try:
-        # API Request construct
         target_url = f"{API_URL}{clean_number}" if API_URL.endswith("/") else f"{API_URL}/{clean_number}"
-        
-        response = requests.get(
-            target_url,
-            timeout=30
-        )
 
+        response = requests.get(target_url, timeout=30)
         response.raise_for_status()
         api_data = response.json()
 
         results = api_data.get("Results", [])
         if not results:
-            await searching_message.edit_text(
-                "❌ No results found."
-            )
+            await searching_message.edit_text("❌ No results found.")
             return
 
         lines = [
@@ -152,7 +129,6 @@ async def lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"• Email  : {entry.get('email', 'Not Available')}")
             lines.append("")
 
-        # Display note from API response
         note = api_data.get("note")
         if note:
             lines.append(f"📝 Note: {note}")
@@ -183,8 +159,7 @@ async def lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except requests.exceptions.Timeout:
         try:
             await searching_message.edit_text(
-                "❌ API request timeout.\n\n"
-                "Please try again."
+                "❌ API request timeout.\n\nPlease try again."
             )
         except Exception:
             pass
@@ -192,8 +167,7 @@ async def lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except requests.exceptions.RequestException:
         try:
             await searching_message.edit_text(
-                "❌ API connection failed.\n\n"
-                "Please try again later."
+                "❌ API connection failed.\n\nPlease try again later."
             )
         except Exception:
             pass
@@ -208,7 +182,6 @@ async def lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as error:
         print("ERROR:", error)
-
         try:
             await searching_message.edit_text(
                 "❌ Something went wrong."
@@ -221,14 +194,9 @@ async def lookup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # DELETE BUTTON
 # ==========================================
 
-async def delete_result(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def delete_result(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-
     await query.answer("🗑 Deleted successfully!")
-
     try:
         await query.message.delete()
     except Exception:
@@ -239,10 +207,7 @@ async def delete_result(
 # MAIN
 # ==========================================
 
-def main():
-    # Starts the background Flask server
-    keep_alive()
-
+def run_bot():
     telegram_request = HTTPXRequest(
         connect_timeout=30,
         read_timeout=60,
@@ -258,17 +223,13 @@ def main():
         .build()
     )
 
-    app.add_handler(
-        CommandHandler("start", start)
-    )
-
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             lookup
         )
     )
-
     app.add_handler(
         CallbackQueryHandler(
             delete_result,
@@ -281,6 +242,17 @@ def main():
     print("================================")
 
     app.run_polling()
+
+
+def main():
+    # Bot ko background thread me chalao
+    bot_thread = Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+
+    # Flask server ko MAIN thread me chalao (Render ke liye)
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🌐 Flask server running on port {port}")
+    flask_app.run(host='0.0.0.0', port=port)
 
 
 if __name__ == "__main__":
