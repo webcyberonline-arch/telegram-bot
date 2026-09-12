@@ -1,5 +1,5 @@
-python-telegram-bot
-requests
-flask
+python-telegram-bot==21.6
 httpx
+flask
+requests
 gunicorn
